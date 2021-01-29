@@ -7,53 +7,62 @@ import java.io.IOException;
 import java.net.Socket;
 
 public class Client {
+    private static Thread recieve;
+    private static Thread transmit;
+    private static String ipAddress;
+    private static int port;
 
     public static void main(String[] args) {
 
-        String ipAddress = ConsoleHelper.readString("Введите IP-адрес сервера:");
-        int port = ConsoleHelper.readInt("Введите номер порта:");
+        ipAddress = ConsoleHelper.readString("Введите IP-адрес сервера:");
+        port = ConsoleHelper.readInt("Введите номер порта:");
 
         try (Socket socket = new Socket(ipAddress, port)) {
             ConsoleHelper.writeMessage("Клиент подключился к серверу " + socket.getRemoteSocketAddress());
             try (Connection connection = new Connection(socket)) {
-                // Отправка сообщения
-                Thread transmit = new Thread(() -> {
-                    while (!socket.isClosed()) {
-                        String message = ConsoleHelper.readString();
 
+                // Прием сообщения
+                recieve = new Thread(() -> {
+                    while (!socket.isClosed() && !Thread.currentThread().isInterrupted()) {
                         try {
-                            if (message.equals("/exit")) {
-                                connection.send("Соединение с клиентом разорвано");
-                                break;
-                            }
-                            connection.send(message);
+                            ConsoleHelper.writeMessage(connection.receive());
                         } catch (IOException e) {
-                            ConsoleHelper.writeMessage("Произошла ошибка при попытке отправить сообщение.");
+                            ConsoleHelper.writeMessage("Произошла ошибка при получении сообщения от сервера.");
+                            transmit.interrupt();
+                            break;
                         }
                     }
                 }
                 );
 
-                // Прием сообщения
-                Thread recieve = new Thread(() -> {
-                    while (!socket.isClosed()) {
+                // Отправка сообщения
+                transmit = new Thread(() -> {
+                    while (!socket.isClosed() && !Thread.currentThread().isInterrupted()) {
+                        String message = ConsoleHelper.readString();
+
                         try {
-                            ConsoleHelper.writeMessage(connection.receive());
+                            if (message.equals("/exit")) {
+                                recieve.interrupt();
+                                break;
+                            }
+                            connection.send(message);
                         } catch (IOException e) {
-                            ConsoleHelper.writeMessage("Произошла ошибка при получении сообщения от сервера.");
+                            ConsoleHelper.writeMessage("Произошла ошибка при попытке отправить сообщение.");
+                            recieve.interrupt();
+                            break;
                         }
                     }
                 }
                 );
 
                 transmit.start();
+                recieve.setDaemon(true);
                 recieve.start();
 
                 try {
                     transmit.join();
-                    recieve.join();
                 } catch (InterruptedException e) {
-                    ConsoleHelper.writeMessage("Аварийная остановка выполнения программы");
+                    ConsoleHelper.writeMessage("Работа приложения завершена");
                 }
 
 
@@ -64,7 +73,6 @@ public class Client {
             ConsoleHelper.writeMessage("Ошибка при подключении к серверу");
             return;
         }
-
     }
 }
 
